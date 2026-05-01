@@ -17,15 +17,6 @@ npm run dev
 # open the URL printed by Vite (commonly http://localhost:5173)
 ```
 
-To run parser/lexer tests (basic):
-
-```bash
-cd web-editor
-node test-lexer.js
-node test-lexer2.js
-node test-lexer3.js
-```
-
 ## Project layout (important files)
 
 - `web-editor/src/mechtex.ne` — Nearley grammar (language spec)
