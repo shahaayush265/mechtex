@@ -36,7 +36,7 @@ node test-lexer3.js
 
 ## Live demo
 
-Placeholder live demo: https://example.com/mechtex (update with your hosted URL)
+[Create mechanics diagrams now!](https://shahaayush265.github.io/mechtex-live/)
 
 ## Documentation
 
