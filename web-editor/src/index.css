@@ -514,7 +514,13 @@ textarea.editor::selection {
     padding: 0 14px;
   }
 
+  /* Allow stacked panes to be scrolled on small screens and reduce their min height */
+  .app-shell {
+    height: auto;
+    overflow: auto;
+  }
+
   .pane {
-    min-height: 520px;
+    min-height: 360px;
   }
 }
