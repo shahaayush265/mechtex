@@ -1,0 +1,48 @@
+# Logs
+web-editor/logs
+web-editor/*.log
+web-editor/npm-debug.log*
+web-editor/yarn-debug.log*
+web-editor/yarn-error.log*
+web-editor/pnpm-debug.log*
+web-editor/lerna-debug.log*
+
+# Node / package manager
+web-editor/node_modules/
+web-editor/.pnp
+web-editor/.pnp.js
+
+# Build output
+web-editor/dist/
+web-editor/dist-ssr/
+
+# Environment files
+web-editor/.env
+web-editor/.env.local
+web-editor/.env.*.local
+
+# Editor directories and files (project)
+web-editor/.vscode/
+web-editor/scripts/
+web-editor/dist/
+web-editor/!.vscode/extensions.json
+web-editor/.idea/
+web-editor/.DS_Store
+web-editor/*.suo
+web-editor/*.ntvs*
+web-editor/*.njsproj
+web-editor/*.sln
+web-editor/*.sw?
+
+# Misc
+web-editor/.cache/
+web-editor/.eslintcache
+web-editor/coverage/
+dist/
+
+# Top-level editor and IDE files
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
