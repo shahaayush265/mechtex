@@ -88,7 +88,6 @@ function MathLabel({
         transform={`scale(1, -1) translate(0, ${-2 * y})`}
       >
         <div
-          xmlns="http://www.w3.org/1999/xhtml"
           style={{
             width: "100%",
             height: "100%",
@@ -523,7 +522,7 @@ function SvgRenderer({
     event: ReactMouseEvent<SVGElement>,
   ) => {
     event.stopPropagation();
-    const rect = svgRef.current?.getBoundingClientRect();
+    const rect = effectiveSvgRef.current?.getBoundingClientRect();
     if (!rect) return;
     setPinnedTooltip(
       tooltipFromComponent(
@@ -539,7 +538,7 @@ function SvgRenderer({
     style: { cursor: "pointer" as const },
   });
   const handleMouseMove = (event: ReactMouseEvent<SVGSVGElement>) => {
-    const rect = svgRef.current?.getBoundingClientRect();
+    const rect = effectiveSvgRef.current?.getBoundingClientRect();
     if (!rect) return;
     const xView = ((event.clientX - rect.left) / rect.width) * 1000 - 500;
     const yView = ((event.clientY - rect.top) / rect.height) * 1000 - 500;
@@ -669,7 +668,7 @@ function SvgRenderer({
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <svg
-        ref={svgRef}
+        ref={effectiveSvgRef}
         className="svg-canvas"
         viewBox="-500 -500 1000 1000"
         preserveAspectRatio="xMidYMid meet"
