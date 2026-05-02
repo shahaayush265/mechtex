@@ -1376,15 +1376,26 @@ function PropertyRow({
   val: any;
   onUpdate: (id: string, k: string, v: string) => void;
 }) {
-  const isObject = typeof val === "object" && val !== null;
-  const initialStr = isObject ? JSON.stringify(val) : String(val);
+  // Helper to format values specifically for MechTeX
+  const formatValue = (v: any) => {
+    if (Array.isArray(v)) {
+      // Join arrays with a comma and space, NO quotes!
+      return `[${v.join(", ")}]`;
+    }
+    if (typeof v === "object" && v !== null) {
+      return JSON.stringify(v);
+    }
+    return String(v);
+  };
+
+  const initialStr = formatValue(val);
   const [localVal, setLocalVal] = useState(initialStr);
 
   // Sync local state when component/property selection changes
-  // Avoid re-syncing constantly so user text input isn't interrupted mid-typing
+  // We strictly depend on compId and propKey to avoid interrupting the user mid-keystroke
   useEffect(() => {
-    setLocalVal(isObject ? JSON.stringify(val) : String(val));
-  }, [compId, propKey, isObject]);
+    setLocalVal(formatValue(val));
+  }, [compId, propKey]);
 
   return (
     <div
