@@ -18,36 +18,29 @@ interface DisplayOptions {
   textOnTop: boolean;
 }
 
-interface TooltipData {
-  x: number;
-  y: number;
-  title: string;
-  rows: Array<{ key: string; value: string }>;
-}
-
 const DEFAULT_CODE = `\\begin{system}[scale=1.0]
-    \\ceiling[id=top, width=20]{y=8}
-    \\floor[id=gnd, width=20]{y=-8}
+    \\ceiling[id=top, width=20, hideProperties=[width, length, L]]{y=8}
+    \\floor[id=gnd, width=20, hideProperties=[width, length, L]]{y=-8}
 
     % Fixed incline position in properties
-    \\incline[id=inc1, angle=30, length=12, x=-3]{on={anchor=gnd.surface, mu=0.35}}
+    \\incline[id=inc1, angle=30, length=12, x=-6, hideProperties=[length, L]]{on={anchor=gnd.surface, mu=0.35}}
     
     % Pulley supported from the incline crest with a rod
-    \\pulley[id=p1, radius=0.8]{from=inc1.top, distance=0.7, direction=0, relative_to=inc1.surface}
-    \\rod[id=p1_support]{connects=(inc1.top, p1.center)}
+    \\pulley[id=p1, radius=0.8]{from=inc1.top, distance=1.1, direction=0, relative_to=inc1.surface}
+    \\rod[id=p1_support, hideProperties=[length, L]]{connects=(inc1.top, p1.center)}
     
     % Block sitting ON the slope
-    \\block[id=m1, width=2, height=2, label_mass=$m_1$]{on=inc1.surface, position=6}
+    \\block[id=m1, width=2, height=2, label_mass=$m_1$, hideProperties=[width, height]]{on={anchor=inc1.surface, mu=0}, position=6}
     
     % Hanging block on the outside
-    \\block[id=m2, width=1.8, height=1.8, label_mass=$m_2$]{hang=p1.right, y=-6}
+    \\block[id=m2, width=1.8, height=1.8, label_mass=$m_2$, hideProperties=[width, height]]{hang=p1.right, y=-6}
     
     % String routing
     \\string[id=str1]{connects=(m1.right -> over(p1) -> m2.top)}
     
     % Forces (Gravity is absolute down, Normal is perpendicular 90+30=120)
-    \\vector[id=mg, color=#ef4444, label=$m_1g$, length=2.5, angle=-90]{connects=m1.center}
-    \\vector[id=normal, color=#10b981, label=$N$, length=2.5, angle=120]{connects=m1.top}
+    \\vector[id=mg, color=#ef4444, label=$m_1g$, length=2.5, angle=-90, hideProperties=[length, L]]{connects=m1.center}
+    \\vector[id=normal, color=#10b981, label=$N$, length=2.5, angle=120, hideProperties=[length, L]]{connects=m1.top}
 
     \\label[id=q1, label=$\\text{Find acceleration and tension}$]{at=top.surface, dy=-1}
   \\end{system}`;
@@ -56,7 +49,7 @@ function MathLabel({
   text,
   x,
   y,
-  color = "white",
+  color = "var(--diagram-ink)",
   fontSize = 24,
   withBackdrop = false,
 }: {
@@ -97,9 +90,8 @@ function MathLabel({
             color,
             fontSize: `${fontSize}px`,
             fontWeight: 700,
-            textShadow:
-              "0 0 1px rgba(248,250,252,0.9), 0 0 3px rgba(248,250,252,0.7)",
-            background: withBackdrop ? "rgba(248,250,252,0.12)" : "transparent",
+            textShadow: "var(--label-text-shadow)",
+            background: withBackdrop ? "var(--label-backdrop)" : "transparent",
             borderRadius: withBackdrop ? "6px" : "0px",
           }}
           dangerouslySetInnerHTML={{ __html: html }}
@@ -116,7 +108,7 @@ function MathLabel({
         fontWeight={700}
         textAnchor="middle"
         dominantBaseline="middle"
-        stroke="rgba(248,250,252,0.9)"
+        stroke="var(--label-stroke)"
         strokeWidth={1.6}
         paintOrder="stroke fill"
         transform={`scale(1, -1) translate(0, ${-2 * y})`}
@@ -131,13 +123,14 @@ function SvgRenderer({
   components,
   options,
   svgRef,
+  onSelect,
 }: {
   components: ResolvedComponent[];
   options: DisplayOptions;
   svgRef?: React.RefObject<SVGSVGElement | null>;
+  onSelect?: (comp: ResolvedComponent | null) => void;
 }) {
-  // We flip the Y axis so +y is up (standard Cartesian), and translate to center
-  const scale = 50; // pixels per unit
+  const scale = 50;
   const LABEL_FONT = {
     angle: 22,
     distance: 18,
@@ -170,8 +163,6 @@ function SvgRenderer({
   };
   const localSvgRef = useRef<SVGSVGElement | null>(null);
   const effectiveSvgRef = svgRef || localSvgRef;
-  const [pinnedTooltip, setPinnedTooltip] = useState<TooltipData | null>(null);
-  const [hoverTooltip, setHoverTooltip] = useState<TooltipData | null>(null);
   const toRadians = (deg: number) => (deg * Math.PI) / 180;
   const normalizeAngleDeg = (deg: number) => ((deg % 360) + 360) % 360;
   const shortestSignedDeltaDeg = (fromDeg: number, toDeg: number) => {
@@ -221,6 +212,7 @@ function SvgRenderer({
     }
     return points;
   };
+  const BLOCK_OFFSET_PX = -2;
   const chooseSmartLabelPosition = ({
     candidates,
     avoidPoints = [],
@@ -476,123 +468,39 @@ function SvgRenderer({
   };
   const hiddenPropertiesFor = (comp: ResolvedComponent) =>
     toHiddenPropertySet(comp.properties.hideProperties);
-  const isPropertyHidden = (comp: ResolvedComponent, propertyName: string) =>
-    hiddenPropertiesFor(comp).has(propertyName);
+  const isPropertyHidden = (comp: ResolvedComponent, propertyName: string) => {
+    const hidden = hiddenPropertiesFor(comp);
+    if (hidden.has(propertyName)) return true;
+    for (const h of Array.from(hidden)) {
+      if (h && propertyName.startsWith(h)) return true;
+    }
+    return false;
+  };
   const isAnyPropertyHidden = (
     comp: ResolvedComponent,
     propertyNames: string[],
   ) =>
     propertyNames.some((propertyName) => isPropertyHidden(comp, propertyName));
-  const shouldShowInTooltip = (key: string) =>
-    !["id", "hideProperties", "group", "mu", "friction"].includes(key) &&
-    !key.startsWith("label_");
-  const formatTooltipValue = (value: unknown) => {
-    if (Array.isArray(value))
-      return value.map((item) => String(item)).join(", ");
-    if (typeof value === "object" && value !== null)
-      return JSON.stringify(value);
-    return String(value);
-  };
-  const tooltipRowsFor = (comp: ResolvedComponent) => {
-    const hidden = hiddenPropertiesFor(comp);
-    return Object.entries(comp.properties)
-      .filter(
-        ([key, value]) =>
-          value !== undefined && shouldShowInTooltip(key) && !hidden.has(key),
-      )
-      .map(([key, value]) => ({ key, value: formatTooltipValue(value) }));
-  };
-  const tooltipFromComponent = (
-    comp: ResolvedComponent,
-    x: number,
-    y: number,
-  ): TooltipData => {
-    const rows = tooltipRowsFor(comp);
-    return {
-      x,
-      y,
-      title: `${comp.type} (${comp.id})`,
-      rows: rows.length
-        ? rows
-        : [{ key: "info", value: "No visible properties" }],
-    };
-  };
-  const showPinnedTooltip = (
-    comp: ResolvedComponent,
-    event: ReactMouseEvent<SVGElement>,
-  ) => {
-    event.stopPropagation();
-    const rect = effectiveSvgRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setPinnedTooltip(
-      tooltipFromComponent(
-        comp,
-        event.clientX - rect.left + 14,
-        event.clientY - rect.top + 14,
-      ),
-    );
-  };
+
   const interactiveProps = (comp: ResolvedComponent) => ({
-    onClick: (event: ReactMouseEvent<SVGElement>) =>
-      showPinnedTooltip(comp, event),
+    onClick: (event: ReactMouseEvent<SVGElement>) => {
+      event.stopPropagation();
+      onSelect?.(comp);
+    },
     style: { cursor: "pointer" as const },
   });
-  const handleMouseMove = (event: ReactMouseEvent<SVGSVGElement>) => {
-    const rect = effectiveSvgRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const xView = ((event.clientX - rect.left) / rect.width) * 1000 - 500;
-    const yView = ((event.clientY - rect.top) / rect.height) * 1000 - 500;
-    const worldX = xView;
-    const worldY = -yView;
-    const threshold = (20 * 1000) / rect.width;
 
-    let nearest: { dist: number; angle: number } | null = null;
-    for (const comp of components) {
-      if (comp.type !== "incline") continue;
-      const angle = comp.rotation || 0;
-      const norm = normalizeAngleDeg(angle);
-      const isAxisAligned = axisCandidates.some(
-        (axis) =>
-          Math.abs(shortestSignedDeltaDeg(axis, norm)) < AXIS_EPSILON_DEG,
-      );
-      if (isAxisAligned) continue;
-      const x0 = (comp.properties.x || 0) * scale;
-      const y0 = (comp.properties.y || 0) * scale;
-      const length = (comp.properties.length || 5) * scale;
-      const rad = toRadians(angle);
-      const peakX = x0 + length * Math.cos(rad);
-      const peakY = y0 + length * Math.sin(rad);
-      const baseDist = Math.hypot(worldX - x0, worldY - y0);
-      const peakDist = Math.hypot(worldX - peakX, worldY - peakY);
-      const d = Math.min(baseDist, peakDist);
-      if (d <= threshold && (!nearest || d < nearest.dist)) {
-        const acute = Math.abs(
-          toAcuteDelta(
-            shortestSignedDeltaDeg(Math.cos(rad) >= 0 ? 0 : 180, norm),
-          ),
-        );
-        nearest = { dist: d, angle: acute };
-      }
-    }
-
-    if (nearest) {
-      setHoverTooltip({
-        x: event.clientX - rect.left + 14,
-        y: event.clientY - rect.top + 14,
-        title: "Incline Angle",
-        rows: [{ key: "angle", value: `${fmt(nearest.angle)}°` }],
-      });
-    } else {
-      setHoverTooltip(null);
-    }
-  };
   const propertyLabels = (comp: ResolvedComponent) => {
     const labels: string[] = [];
-    const mu = textProp(comp.properties, ["label_mu", "contact_mu"]);
+    const muKey = Object.keys(comp.properties).find(
+      (k) =>
+        k === "label_mu" || k === "contact_mu" || k.startsWith("contact_mu_"),
+    );
+    const mu = muKey ? comp.properties[muKey] : undefined;
     const k = textProp(comp.properties, ["label_k", "k", "spring_constant"]);
     if (
       mu !== undefined &&
-      !isPropertyHidden(comp, "contact_mu") &&
+      !isPropertyHidden(comp, muKey ?? "contact_mu") &&
       !isPropertyHidden(comp, "label_mu")
     ) {
       labels.push(String(mu).startsWith("$") ? String(mu) : `$\\mu=${mu}$`);
@@ -608,6 +516,7 @@ function SvgRenderer({
     return labels;
   };
   const buildArcPoints = (seg: any) => {
+    const radius = seg.r;
     const startAngle = Math.atan2(seg.inP.y - seg.cy, seg.inP.x - seg.cx);
     const endAngle = Math.atan2(seg.outP.y - seg.cy, seg.outP.x - seg.cx);
     const twoPi = Math.PI * 2;
@@ -621,8 +530,8 @@ function SvgRenderer({
         const t = i / steps;
         const angle = startAngle + delta * t;
         points.push({
-          x: seg.cx + seg.r * Math.cos(angle),
-          y: seg.cy + seg.r * Math.sin(angle),
+          x: seg.cx + radius * Math.cos(angle),
+          y: seg.cy + radius * Math.sin(angle),
         });
       }
       return points;
@@ -652,18 +561,50 @@ function SvgRenderer({
   };
   const renderLayer = (type: string) => {
     if (["floor", "ceiling", "wall", "incline"].includes(type)) return 0;
-    if (["pulley", "block"].includes(type)) return 1;
+    if (type === "block") return 1;
     if (type === "rod") return 2;
     if (["spring", "string"].includes(type)) return 3;
-    if (type === "vector") return 4;
-    if (type === "label") return 5;
-    return 5;
+    if (type === "pulley") return 4;
+    if (type === "vector") return 5;
+    if (type === "label") return 6;
+    return 6;
   };
   const orderedComponents = [...components].sort(
     (a, b) => renderLayer(a.type) - renderLayer(b.type),
   );
 
-  const activeTooltip = hoverTooltip ?? pinnedTooltip;
+  const getVisualStyles = (
+    comp: ResolvedComponent,
+    opts?: { baseStrokeMultiplier?: number },
+  ) => {
+    const cs =
+      typeof window !== "undefined"
+        ? getComputedStyle(document.documentElement)
+        : ({} as CSSStyleDeclaration);
+    const fillOpacity =
+      parseFloat(cs.getPropertyValue("--glass-fill-opacity")) || 0.06;
+    const strokeOpacity =
+      parseFloat(cs.getPropertyValue("--glass-stroke-opacity")) || 0.95;
+    const baseStrokeWidth =
+      parseFloat(cs.getPropertyValue("--glass-stroke-width")) || 1.9;
+    const colorProp = comp.properties.color;
+    const defaultColor =
+      comp.type === "block"
+        ? "var(--diagram-block)"
+        : comp.type === "incline"
+          ? "#967BB6"
+          : comp.type === "pulley"
+            ? "red"
+            : "var(--diagram-ink)";
+    const resolvedColor = colorProp || defaultColor;
+    return {
+      fill: resolvedColor,
+      fillOpacity,
+      stroke: resolvedColor,
+      strokeOpacity,
+      strokeWidth: baseStrokeWidth * (opts?.baseStrokeMultiplier ?? 1),
+    };
+  };
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -672,9 +613,7 @@ function SvgRenderer({
         className="svg-canvas"
         viewBox="-500 -500 1000 1000"
         preserveAspectRatio="xMidYMid meet"
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setHoverTooltip(null)}
-        onClick={() => setPinnedTooltip(null)}
+        onClick={() => onSelect?.(null)}
       >
         <g transform="translate(0, 0) scale(1, -1)">
           {orderedComponents.map((comp) => {
@@ -708,15 +647,20 @@ function SvgRenderer({
               const cx = (x + width / 2) * scale;
               const cy = (y + height / 2) * scale;
               const r = (width / 2) * scale;
+              const vs = getVisualStyles(comp);
               return (
                 <g key={comp.id} {...interactiveProps(comp)}>
                   <circle
                     cx={cx}
                     cy={cy}
                     r={r}
-                    fill="#e2e8f0"
-                    stroke="#475569"
-                    strokeWidth={Math.max(2, r * 0.08)}
+                    fill={vs.fill}
+                    fillOpacity={vs.fillOpacity}
+                    stroke={vs.stroke}
+                    strokeOpacity={vs.strokeOpacity}
+                    strokeWidth={Math.max(vs.strokeWidth, r * 0.08)}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
                   />
                   <circle
                     cx={cx}
@@ -794,7 +738,10 @@ function SvgRenderer({
                   if (seg.type === "line") {
                     d += ` L ${seg.x * scale} ${seg.y * scale}`;
                   } else if (seg.type === "arc") {
-                    buildArcPoints(seg).forEach((point) => {
+                    buildArcPoints({
+                      ...seg,
+                      r: seg.r,
+                    }).forEach((point) => {
                       d += ` L ${point.x * scale} ${point.y * scale}`;
                     });
                   }
@@ -813,7 +760,6 @@ function SvgRenderer({
                     />
                   );
                 }
-                // Fallback for other routing types
                 return (
                   <path
                     key={comp.id}
@@ -1001,7 +947,6 @@ function SvgRenderer({
                   if (len < 1e-6) return null;
                   const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
                   const color = comp.properties.color || "#ef4444";
-                  // Offset vector labels toward the head and slightly outward to reduce clutter near the tail.
                   const perpX = (dy / len) * 28;
                   const perpY = (-dx / len) * 28;
                   const labelX = sx1 + dx * 0.72 + perpX;
@@ -1060,8 +1005,8 @@ function SvgRenderer({
                     </g>
                   );
                 }
-              } // end else if (comp.endpoints)
-            } // end if (['string', 'rod', 'spring', 'vector'])
+              }
+            }
 
             if (!comp.bounds) return null;
             const { x, y, width, height } = comp.bounds;
@@ -1112,15 +1057,18 @@ function SvgRenderer({
               const inclineReference = Math.cos(rad) >= 0 ? 0 : 180;
               const inclineMidX = (ix + peakX) / 2;
               const inclineMidY = (iy + peakY) / 2;
-              // Triangle: base-left corner, foot of hypotenuse (same x as peak, same y as base), peak
               const points = `${ix},${iy} ${peakX},${iy} ${peakX},${peakY}`;
+              const vs = getVisualStyles(comp);
               return (
                 <g key={comp.id} {...interactiveProps(comp)}>
                   <polygon
                     points={points}
-                    fill="#94a3b8"
-                    stroke="#334155"
-                    strokeWidth="3"
+                    fill={vs.fill}
+                    fillOpacity={vs.fillOpacity}
+                    stroke={vs.stroke}
+                    strokeOpacity={vs.strokeOpacity}
+                    strokeWidth={Math.max(2, vs.strokeWidth)}
+                    strokeLinejoin="round"
                   />
                   {options.showAngles &&
                     !inclineIsAxisAligned &&
@@ -1279,86 +1227,94 @@ function SvgRenderer({
               const cx = (x + width / 2) * scale;
               const cy = (y + height / 2) * scale;
               const blockTextRotation = options.textOnTop ? 0 : -rotation;
+              const vs = getVisualStyles(comp);
+              const blockOffsetPx = BLOCK_OFFSET_PX;
               return (
                 <g
                   key={comp.id}
                   transform={`rotate(${rotation} ${cx} ${cy})`}
                   {...interactiveProps(comp)}
                 >
-                  <rect
-                    x={x * scale}
-                    y={y * scale}
-                    width={width * scale}
-                    height={height * scale}
-                    fill="#3b82f6"
-                    stroke="#1e40af"
-                    strokeWidth="2"
-                    rx="4"
-                  />
-                  {comp.properties.label_mass &&
-                    !isAnyPropertyHidden(comp, ["label_mass", "mass"]) &&
-                    placeText(
-                      <g transform={`rotate(${blockTextRotation} ${cx} ${cy})`}>
-                        <MathLabel
-                          text={comp.properties.label_mass}
-                          x={cx}
-                          y={cy}
-                        />
-                      </g>,
-                    )}
-                  {options.showDistances &&
-                    !isAnyPropertyHidden(comp, ["width", "height"]) &&
-                    (() => {
-                      const dimensionText = `$${fmt(width)}\\times${fmt(height)}$`;
-                      const topY = cy - (height * scale) / 2;
-                      const dimensionPos = chooseSmartLabelPosition({
-                        candidates: [
-                          { x: cx, y: topY - 20 },
-                          { x: cx + 26, y: topY - 22 },
-                          { x: cx - 26, y: topY - 22 },
-                          { x: cx, y: topY - 32 },
-                        ],
-                        avoidPoints: [{ x: cx, y: cy }],
-                        labelText: dimensionText,
-                        fontSize: LABEL_FONT.dimension,
-                      });
-                      reserveLabelBox(
-                        dimensionPos.x,
-                        dimensionPos.y,
-                        dimensionText,
-                        LABEL_FONT.dimension,
-                      );
-                      return placeText(
-                        <g
-                          transform={`rotate(${blockTextRotation} ${cx} ${cy})`}
-                        >
-                          <MathLabel
-                            text={dimensionText}
-                            x={dimensionPos.x}
-                            y={dimensionPos.y}
-                            color="#1d4ed8"
-                            fontSize={LABEL_FONT.dimension}
-                          />
-                        </g>,
-                      );
-                    })()}
-                  {options.showProperties &&
-                    propertyLabels(comp).map((label, index) =>
+                  <g transform={`translate(0 ${-blockOffsetPx})`}>
+                    <rect
+                      x={x * scale}
+                      y={y * scale}
+                      width={width * scale}
+                      height={height * scale}
+                      fill={vs.fill}
+                      fillOpacity={vs.fillOpacity}
+                      stroke={vs.stroke}
+                      strokeOpacity={vs.strokeOpacity}
+                      strokeWidth={Math.max(1.5, vs.strokeWidth)}
+                      rx="4"
+                    />
+                    {comp.properties.label_mass &&
+                      !isAnyPropertyHidden(comp, ["label_mass", "mass"]) &&
                       placeText(
                         <g
-                          key={label}
                           transform={`rotate(${blockTextRotation} ${cx} ${cy})`}
                         >
                           <MathLabel
-                            text={label}
+                            text={comp.properties.label_mass}
                             x={cx}
-                            y={cy + (height * scale) / 2 + 18 + index * 18}
-                            color="#1d4ed8"
-                            fontSize={LABEL_FONT.property}
+                            y={cy}
                           />
                         </g>,
-                      ),
-                    )}
+                      )}
+                    {options.showDistances &&
+                      !isAnyPropertyHidden(comp, ["width", "height"]) &&
+                      (() => {
+                        const dimensionText = `$${fmt(width)}\\times${fmt(height)}$`;
+                        const topY = cy - (height * scale) / 2;
+                        const dimensionPos = chooseSmartLabelPosition({
+                          candidates: [
+                            { x: cx, y: topY - 20 },
+                            { x: cx + 26, y: topY - 22 },
+                            { x: cx - 26, y: topY - 22 },
+                            { x: cx, y: topY - 32 },
+                          ],
+                          avoidPoints: [{ x: cx, y: cy }],
+                          labelText: dimensionText,
+                          fontSize: LABEL_FONT.dimension,
+                        });
+                        reserveLabelBox(
+                          dimensionPos.x,
+                          dimensionPos.y,
+                          dimensionText,
+                          LABEL_FONT.dimension,
+                        );
+                        return placeText(
+                          <g
+                            transform={`rotate(${blockTextRotation} ${cx} ${cy})`}
+                          >
+                            <MathLabel
+                              text={dimensionText}
+                              x={dimensionPos.x}
+                              y={dimensionPos.y}
+                              color="#1d4ed8"
+                              fontSize={LABEL_FONT.dimension}
+                            />
+                          </g>,
+                        );
+                      })()}
+                    {options.showProperties &&
+                      propertyLabels(comp).map((label, index) =>
+                        placeText(
+                          <g
+                            key={label}
+                            transform={`rotate(${blockTextRotation} ${cx} ${cy})`}
+                          >
+                            <MathLabel
+                              text={label}
+                              x={cx}
+                              y={cy + (height * scale) / 2 + 18 + index * 18}
+                              color="#1d4ed8"
+                              fontSize={LABEL_FONT.property}
+                            />
+                          </g>,
+                        ),
+                      )}
+                  </g>
                 </g>
               );
             }
@@ -1402,41 +1358,127 @@ function SvgRenderer({
 
             return null;
           })}
-          {options.textOnTop && <g>{textOverlayNodes}</g>}
+          {options.textOnTop && <g pointerEvents="none">{textOverlayNodes}</g>}
         </g>
       </svg>
-      {activeTooltip && (
-        <div
-          style={{
-            position: "absolute",
-            left: Math.min(activeTooltip.x, 560),
-            top: Math.min(activeTooltip.y, 420),
-            maxWidth: 280,
-            background: "rgba(15, 23, 42, 0.95)",
-            color: "#e2e8f0",
-            border: "1px solid #334155",
-            borderRadius: 8,
-            padding: "8px 10px",
-            fontSize: 13,
-            pointerEvents: "none",
-            zIndex: 20,
-            boxShadow: "0 8px 24px rgba(2,6,23,0.45)",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            {activeTooltip.title}
+    </div>
+  );
+}
+
+function PropertyRow({
+  compId,
+  propKey,
+  val,
+  onUpdate,
+}: {
+  compId: string;
+  propKey: string;
+  val: any;
+  onUpdate: (id: string, k: string, v: string) => void;
+}) {
+  const isObject = typeof val === "object" && val !== null;
+  const initialStr = isObject ? JSON.stringify(val) : String(val);
+  const [localVal, setLocalVal] = useState(initialStr);
+
+  // Sync local state when component/property selection changes
+  // Avoid re-syncing constantly so user text input isn't interrupted mid-typing
+  useEffect(() => {
+    setLocalVal(isObject ? JSON.stringify(val) : String(val));
+  }, [compId, propKey, isObject]);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        padding: "8px 0",
+        borderBottom: "1px solid var(--line)",
+        alignItems: "center",
+      }}
+    >
+      <div style={{ color: "var(--accent-2)", minWidth: 110 }}>{propKey}:</div>
+      <input
+        value={localVal}
+        onChange={(e) => {
+          setLocalVal(e.target.value);
+          onUpdate(compId, propKey, e.target.value);
+        }}
+        style={{
+          flex: 1,
+          background:
+            "color-mix(in srgb, var(--panel-strong) 40%, transparent)",
+          border: "1px solid var(--line)",
+          color: "var(--text)",
+          padding: "6px 8px",
+          borderRadius: "4px",
+          fontFamily: "monospace",
+          width: "100%",
+          boxSizing: "border-box",
+        }}
+      />
+    </div>
+  );
+}
+
+function Inspector({
+  comp,
+  onClose,
+  onUpdateProperty,
+}: {
+  comp: ResolvedComponent;
+  onClose?: () => void;
+  onUpdateProperty?: (id: string, k: string, v: string) => void;
+}) {
+  const rows = Object.entries(comp.properties).filter(([k]) => k !== "id");
+  return (
+    <div style={{ padding: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 8,
+        }}
+      >
+        <div>
+          <div style={{ fontWeight: 700 }}>
+            {comp.type} ({comp.id})
           </div>
-          {activeTooltip.rows.map((row) => (
-            <div
-              key={`${row.key}:${row.value}`}
-              style={{ display: "flex", gap: 6, whiteSpace: "nowrap" }}
-            >
-              <span style={{ color: "#93c5fd" }}>{row.key}:</span>
-              <span>{row.value}</span>
-            </div>
-          ))}
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            {comp.bounds
+              ? `${Math.round((comp.bounds.width || 0) * 100) / 100}×${Math.round((comp.bounds.height || 0) * 100) / 100}`
+              : ""}
+          </div>
         </div>
-      )}
+        <button
+          className="icon-button"
+          onClick={() => onClose?.()}
+          aria-label="Close inspector"
+        >
+          ✕
+        </button>
+      </div>
+      <div
+        style={{
+          maxHeight: "calc(100vh - 200px)",
+          overflow: "auto",
+          paddingRight: 4,
+        }}
+      >
+        {rows.length ? (
+          rows.map(([k, v]) => (
+            <PropertyRow
+              key={k}
+              compId={comp.id}
+              propKey={k}
+              val={v}
+              onUpdate={onUpdateProperty!}
+            />
+          ))
+        ) : (
+          <div style={{ color: "var(--muted)" }}>No properties</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1453,6 +1495,30 @@ function App() {
     textOnTop: true,
   });
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [selectedComp, setSelectedComp] = useState<ResolvedComponent | null>(
+    null,
+  );
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement | null>(null);
+  const lineCount = code.split("\n").length;
+  const lineNumbers = Array.from(
+    { length: lineCount },
+    (_, i) => `${i + 1}`,
+  ).join("\n");
+
+  const [globalCursor, setGlobalCursor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Track global cursor for the halo to be across the whole interface
+  useEffect(() => {
+    const handleGlobalMove = (e: MouseEvent) => {
+      setGlobalCursor({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener("mousemove", handleGlobalMove);
+    return () => window.removeEventListener("mousemove", handleGlobalMove);
+  }, []);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
@@ -1461,9 +1527,17 @@ function App() {
     if (!previewRef.current) return;
 
     try {
+      const cs =
+        typeof window !== "undefined"
+          ? getComputedStyle(document.documentElement)
+          : ({} as CSSStyleDeclaration);
+      const bgcolor =
+        cs.getPropertyValue("--canvas-bg")?.trim() ||
+        (theme === "dark" ? "#0b0d12" : "#f5f7fb");
+
       const dataUrl = await domtoimage.toPng(previewRef.current, {
-        scale: 4, // Equivalent to pixelRatio
-        bgcolor: theme === "dark" ? "#0b0d12" : "#f5f7fb",
+        scale: 4,
+        bgcolor,
       });
 
       const link = document.createElement("a");
@@ -1479,6 +1553,51 @@ function App() {
     setDisplayOptions((options) => ({ ...options, [key]: !options[key] }));
   };
 
+  const handleUpdateProperty = (id: string, key: string, val: string) => {
+    setCode((prev) => {
+      const lines = prev.split("\n");
+      return lines
+        .map((line) => {
+          // Verify component id is on the line (lookahead for commas/brackets)
+          const idRegex = new RegExp(`id=${id}(?=[,\\]\\s])`);
+          if (idRegex.test(line)) {
+            // 1. Map synthetic keys generated by the solver back to their raw source code equivalents
+            let sourceKey = key;
+            if (key.startsWith("contact_mu")) {
+              sourceKey = "mu";
+            } else if (key.startsWith("contact_anchor")) {
+              sourceKey = "anchor";
+            }
+
+            // 2. Find the exact property, respecting nested curly braces
+            const propRegex = new RegExp(
+              `\\b(${sourceKey}\\s*=\\s*)(?:\\[.*?\\]|\\(.*?\\)|\\{.*?\\}|[^,\\]\\}]*)`,
+            );
+
+            if (propRegex.test(line)) {
+              // Update standard property (e.g., anchor=inc1.surface)
+              return line.replace(propRegex, `$1${val}`);
+            } else if (sourceKey === "anchor") {
+              // 3. SHORTHAND FALLBACK:
+              // If looking for 'anchor=' fails, check if the shorthand 'on=...' was used
+              // instead of 'on={anchor=...}'. We ensure 'on=' is NOT followed by a '{'.
+              const onShorthandRegex = new RegExp(
+                `\\b(on\\s*=\\s*)(?!\\{)([^,\\]\\}]*)`,
+              );
+              if (onShorthandRegex.test(line)) {
+                return line.replace(onShorthandRegex, `$1${val}`);
+              }
+            }
+
+            // 4. Add property directly after the id parameter if not found at all
+            return line.replace(idRegex, `$&, ${sourceKey}=${val}`);
+          }
+          return line;
+        })
+        .join("\n");
+    });
+  };
+
   useEffect(() => {
     try {
       const ast = parseMechTeX(code);
@@ -1487,6 +1606,11 @@ function App() {
         const components = solver.resolve();
         setResolved(components);
         setError(null);
+        // Refresh selectedComp object so its properties accurately update the inputs in the Inspector
+        setSelectedComp((prev) => {
+          if (!prev) return null;
+          return components.find((c) => c.id === prev.id) || null;
+        });
       }
     } catch (e: any) {
       setError(e.message);
@@ -1525,12 +1649,23 @@ function App() {
       <div className="editor-container">
         <div className="pane" style={{ borderRight: "1px solid #334155" }}>
           <div className="pane-header">MechTeX Editor</div>
-          <textarea
-            className="editor"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            spellCheck={false}
-          />
+          <div className="editor-wrapper">
+            <div className="gutter" ref={gutterRef} aria-hidden>
+              <pre>{lineNumbers}</pre>
+            </div>
+            <textarea
+              ref={editorRef}
+              className="editor"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              onScroll={(e) => {
+                const t = e.target as HTMLTextAreaElement;
+                if (gutterRef.current)
+                  gutterRef.current.scrollTop = t.scrollTop;
+              }}
+              spellCheck={false}
+            />
+          </div>
         </div>
         <div className="pane">
           <div className="pane-header preview-header">
@@ -1570,9 +1705,32 @@ function App() {
               </button>
             </div>
           </div>
-          <div className="preview" ref={previewRef}>
-            <SvgRenderer components={resolved} options={displayOptions} />
-            {error && <div className="error-banner">{error}</div>}
+          <div className="preview">
+            <div className="preview-main">
+              <div className="preview-area" ref={previewRef}>
+                {" "}
+                {/* <--- Add it here! */}
+                <SvgRenderer
+                  components={resolved}
+                  options={displayOptions}
+                  onSelect={(c) => setSelectedComp(c)}
+                />
+                {error && <div className="error-banner">{error}</div>}
+              </div>
+              <aside className="inspector" aria-label="Inspector">
+                {selectedComp ? (
+                  <Inspector
+                    comp={selectedComp}
+                    onClose={() => setSelectedComp(null)}
+                    onUpdateProperty={handleUpdateProperty}
+                  />
+                ) : (
+                  <div className="inspector-empty">
+                    Click an object on the diagram to inspect its properties.
+                  </div>
+                )}
+              </aside>
+            </div>
           </div>
         </div>
       </div>
@@ -1589,6 +1747,13 @@ function App() {
           </a>
         </p>
       </footer>
+      {/* Global Cursor Halo Implementation */}
+      {globalCursor && (
+        <div
+          className="cursor-halo"
+          style={{ left: globalCursor.x, top: globalCursor.y }}
+        />
+      )}
     </div>
   );
 }

@@ -39,8 +39,21 @@
   --diagram-block-stroke: rgba(255, 255, 255, 0.58);
   --diagram-accent: #64d2ff;
   --diagram-soft-shadow: #000000;
+  --glass-fill-opacity: 0.15;
+  --glass-stroke-opacity: 1;
+  --glass-stroke-width: 1.9;
+  --glass-stroke-linejoin: round;
+  --glass-stroke-linecap: round;
   --editor-bg: rgba(12, 14, 20, 0.82);
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  /* Label/theme-aware tokens */
+  --label-stroke: rgba(248, 250, 252, 0.9);
+  --label-text-shadow:
+    0 0 1px rgba(248, 250, 252, 0.9), 0 0 3px rgba(248, 250, 252, 0.7);
+  --label-backdrop: rgba(248, 250, 252, 0.12);
+  --tooltip-bg: rgba(2, 6, 23, 0.95);
+  --tooltip-color: #e2e8f0;
+  --tooltip-border: #334155;
 }
 
 * {
@@ -49,6 +62,9 @@
 
 body {
   margin: 0;
+  /* Cursor halo */
+  --cursor-halo-size: 500px;
+  --cursor-halo-color: rgba(96, 165, 250, 0.18);
   min-width: 960px;
   background: var(--bg);
   color: var(--text);
@@ -115,8 +131,21 @@ textarea {
   --diagram-block-stroke: rgba(0, 77, 170, 0.42);
   --diagram-accent: #00a6d6;
   --diagram-soft-shadow: #64748b;
+  --glass-fill-opacity: 0.06;
+  --glass-stroke-opacity: 0.95;
+  --glass-stroke-width: 1.9;
+  --glass-stroke-linejoin: round;
+  --glass-stroke-linecap: round;
   --editor-bg: rgba(255, 255, 255, 0.78);
   --shadow: 0 24px 70px rgba(60, 60, 67, 0.16);
+  /* Light theme label overrides */
+  --label-stroke: rgba(15, 23, 42, 0.95);
+  --label-text-shadow:
+    0 0 1px rgba(15, 23, 42, 0.9), 0 0 3px rgba(15, 23, 42, 0.7);
+  --label-backdrop: rgba(15, 23, 42, 0.06);
+  --tooltip-bg: rgba(255, 255, 255, 0.96);
+  --tooltip-color: #0f172a;
+  --tooltip-border: rgba(60, 60, 67, 0.12);
 }
 
 .topbar {
@@ -167,6 +196,8 @@ h1 {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* Light theme halo */
+  --cursor-halo-color: rgba(59, 130, 246, 0.12);
   overflow: hidden;
   background:
     radial-gradient(
@@ -429,6 +460,7 @@ textarea.editor::selection {
   background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
+/* 1. Remove the grid from the outer container */
 .preview {
   flex: 1;
   position: relative;
@@ -436,6 +468,14 @@ textarea.editor::selection {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  background: var(--canvas-bg);
+}
+
+/* 2. Apply the grid directly to the export area */
+.preview-area {
+  flex: 1;
+  position: relative;
+  min-width: 0;
   background:
     linear-gradient(
         90deg,
@@ -452,21 +492,84 @@ textarea.editor::selection {
     var(--canvas-bg);
 }
 
-.preview::before {
-  content: "";
-  position: absolute;
-  inset: 18px;
-  border: 1px solid rgba(100, 116, 139, 0.18);
-  border-radius: 8px;
-  pointer-events: none;
-}
-
+/* 3. Make the SVG canvas transparent so the grid shines through */
 .svg-canvas {
   position: relative;
   z-index: 1;
   width: 100%;
   height: 100%;
-  background: var(--canvas-bg);
+  background: transparent;
+}
+
+/* Preview + Inspector layout */
+.preview-main {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 12px;
+  align-items: stretch;
+}
+.preview-area {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+.inspector {
+  width: 320px;
+  border-left: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  overflow: auto;
+}
+.inspector-empty {
+  color: var(--muted);
+  padding: 18px;
+}
+
+/* Cursor halo overlay */
+/* Find the .cursor-halo class around line 431 in index.css and replace it with this: */
+
+/* Cursor halo overlay */
+.cursor-halo {
+  position: fixed; /* <--- Changed to fixed so it maps across the entire screen viewport */
+  width: var(--cursor-halo-size);
+  height: var(--cursor-halo-size);
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--cursor-halo-color) 0%,
+    rgba(0, 0, 0, 0) 60%
+  );
+  filter: blur(8px);
+  transition:
+    transform 80ms linear,
+    opacity 120ms ease;
+  z-index: 9999; /* <--- Ensure it overlays UI shells properly */
+}
+
+/* Editor gutter + wrapper */
+.editor-wrapper {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+}
+.gutter {
+  width: 56px;
+  padding: 18px 8px;
+  background: color-mix(in srgb, var(--panel-strong) 86%, transparent);
+  color: var(--muted);
+  text-align: right;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.96rem;
+  line-height: 1.62;
+  user-select: none;
+  overflow: hidden;
+}
+.gutter pre {
+  margin: 0;
+  white-space: pre;
 }
 
 .error-banner {
@@ -522,5 +625,26 @@ textarea.editor::selection {
 
   .pane {
     min-height: 360px;
+  }
+}
+
+@media (max-width: 1100px) {
+  /* ... your existing mobile rules ... */
+
+  /* Stack the preview canvas and inspector vertically */
+  .preview-main {
+    flex-direction: column;
+  }
+
+  /* Guarantee the diagram canvas gets enough vertical space to be usable */
+  .preview-area {
+    min-height: 350px;
+  }
+
+  /* Make the inspector take full width and separate it with a top border */
+  .inspector {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--line);
   }
 }
