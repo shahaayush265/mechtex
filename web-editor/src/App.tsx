@@ -1841,7 +1841,7 @@ function App() {
                 <textarea
                   value={promptText}
                   onChange={(e) => setPromptText(e.target.value)}
-                  placeholder="Ask anything, @ to mention, / for actions"
+                  placeholder="Tell me what to build!"
                   style={{
                     flex: 1,
                     background: "transparent",
