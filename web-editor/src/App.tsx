@@ -45,6 +45,101 @@ const DEFAULT_CODE = `\\begin{system}[scale=1.0]
     \\label[id=q1, label=$\\text{Find acceleration and tension}$]{at=top.surface, dy=-1}
   \\end{system}`;
 
+const EXAMPLES = [
+  {
+    title: "1. Simple Incline",
+    code: `\\begin{system}[scale=1.0]
+  % Define a basic floor
+  \\floor[id=gnd]{y=-5}
+
+  % Place an incline resting on the floor
+  \\incline[id=ramp, angle=30, length=15]{on=gnd.surface}
+
+  % Place a block on the incline at position 8
+  \\block[id=m1, width=2, height=2, label_mass=$m$]{on=ramp.surface, position=8}
+
+  % Draw force vectors with labels included
+  \\vector[id=fg, length=3, label=$mg$]{connects=m1.center, direction=270}
+
+  \\vector[id=fn, length=2.5, label=$F_N$]{connects=m1.top, direction=90, relative_to=ramp.surface}
+\\end{system}`
+  },
+  {
+    title: "2. Atwood's Machine",
+    code: `\\begin{system}[scale=1.0]
+  % Define a ceiling to hang things from
+  \\ceiling[id=ceil, width=15]{y=10}
+
+  % Hang a pulley from the ceiling
+  \\pulley[id=p1, radius=1.5]{hang=ceil.bottom}
+
+  % Define two masses hanging on either side of the pulley
+  \\block[id=m1, width=2, height=2, label_mass=$m_1$]{
+    below=p1.left,
+    distance=4,
+    align_x=p1.left
+  }
+
+  \\block[id=m2, width=2.5, height=2.5, label_mass=$m_2$]{
+    below=p1.right,
+    distance=6,
+    align_x=p1.right
+  }
+
+  % Connect the two masses with a string routed over the pulley
+  \\string[id=str1]{connects=(m1.top -> over(p1) -> m2.top)}
+\\end{system}`
+  },
+  {
+    title: "3. Complex Routing",
+    code: `\\begin{system}[scale=1.0]
+    \\ceiling[id=top, width=20, hideProperties=[width, length, L]]{y=8}
+    \\floor[id=gnd, width=20, hideProperties=[width, length, L]]{y=-8}
+
+    % Fixed incline position in properties
+    \\incline[id=inc1, angle=30, length=12, x=-6, hideProperties=[length, L]]{on={anchor=gnd.surface, mu=0.35}}
+    
+    % Pulley supported from the incline crest with a rod
+    \\pulley[id=p1, radius=0.8]{from=inc1.top, distance=1.1, direction=0, relative_to=inc1.surface}
+    \\rod[id=p1_support, hideProperties=[length, L]]{connects=(inc1.top, p1.center)}
+    
+    % Block sitting ON the slope
+    \\block[id=m1, width=2, height=2, label_mass=$m_1$, hideProperties=[width, height]]{on={anchor=inc1.surface, mu=0}, position=6}
+    
+    % Hanging block on the outside
+    \\block[id=m2, width=1.8, height=1.8, label_mass=$m_2$, hideProperties=[width, height]]{hang=p1.right, y=-6}
+    
+    % String routing
+    \\string[id=str1]{connects=(m1.right -> over(p1) -> m2.top)}
+    
+    % Forces (Gravity is absolute down, Normal is perpendicular 90+30=120)
+    \\vector[id=mg, color=#ef4444, label=$m_1g$, length=2.5, angle=-90, hideProperties=[length, L]]{connects=m1.center}
+    \\vector[id=normal, color=#10b981, label=$N$, length=2.5, angle=120, hideProperties=[length, L]]{connects=m1.top}
+
+    \\label[id=q1, label=$\\text{Find acceleration and tension}$]{at=top.surface, dy=-1}
+\\end{system}`
+  },
+  {
+    title: "4. Simple Routing",
+    code: `\\begin{system}[scale=1.0]
+  \\ceiling[id=ceil, width=20]{y=8}
+
+  % Suspend pulley from ceiling via a string
+  \\pulley[id=p1, radius=0.8]{below=ceil.bottom, distance=3, align_x=ceil.center}
+  \\string[id=sup]{connects=(ceil.center, p1.center)}
+  
+  % Block A pulled to the side
+  \\block[id=a, width=1.6, height=1.6, label_mass=$m_1$]{x=-5, y=0}
+  
+  % Block B hanging vertically
+  \\block[id=b, width=1.6, height=1.6, label_mass=$m_2$]{hang=p1.right, distance=5}
+
+  % Connect them over the pulley
+  \\string[id=s]{connects=(a.top -> over(p1) -> b.top)}
+\\end{system}`
+  }
+];
+
 function MathLabel({
   text,
   x,
@@ -539,7 +634,7 @@ function SvgRenderer({
     const candidates = [sample(ccwDelta), sample(cwDelta)];
     const score = (points: Array<{ x: number; y: number }>) => {
       if (seg.method === "under" || seg.method === "bottom") {
-        return Math.min(...points.map((p) => p.y));
+        return -Math.min(...points.map((p) => p.y));
       }
       if (seg.method === "left") {
         return -Math.min(...points.map((p) => p.x));
@@ -1517,6 +1612,37 @@ function App() {
     (_, i) => `${i + 1}`,
   ).join("\n");
 
+  const [editorTab, setEditorTab] = useState<'code' | 'prompt' | 'examples'>('code');
+  const [docType, setDocType] = useState<'concise' | 'detailed'>('concise');
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [promptText, setPromptText] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
+  const generateCode = async () => {
+    setIsGenerating(true);
+    setGenerateError(null);
+    try {
+      const res = await fetch(' https://mechtex-backend.onrender.com/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: promptText, docType })
+      });
+      const data = await res.json();
+      if (data.code) {
+        setCode(data.code);
+        setEditorTab('code');
+      } else {
+        setGenerateError(data.error + (data.details ? `: ${data.details}` : ''));
+      }
+    } catch (err: any) {
+      setGenerateError('Error connecting to backend: ' + err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const [globalCursor, setGlobalCursor] = useState<{
     x: number;
     y: number;
@@ -1658,25 +1784,217 @@ function App() {
       </header>
 
       <div className="editor-container">
-        <div className="pane" style={{ borderRight: "1px solid #334155" }}>
-          <div className="pane-header">MechTeX Editor</div>
-          <div className="editor-wrapper">
-            <div className="gutter" ref={gutterRef} aria-hidden>
-              <pre>{lineNumbers}</pre>
-            </div>
-            <textarea
-              ref={editorRef}
-              className="editor"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onScroll={(e) => {
-                const t = e.target as HTMLTextAreaElement;
-                if (gutterRef.current)
-                  gutterRef.current.scrollTop = t.scrollTop;
-              }}
-              spellCheck={false}
-            />
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', gap: '20px', padding: '0 4px 12px 4px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', flexShrink: 0 }}>
+            <span 
+              onClick={() => setEditorTab('code')} 
+              style={{ cursor: 'pointer', opacity: editorTab === 'code' ? 1 : 0.5, borderBottom: editorTab === 'code' ? '2px solid var(--accent)' : 'none', paddingBottom: '4px', transition: 'opacity 0.2s' }}
+            >
+              Code Editor
+            </span>
+            <span 
+              onClick={() => setEditorTab('prompt')} 
+              style={{ cursor: 'pointer', opacity: editorTab === 'prompt' ? 1 : 0.5, borderBottom: editorTab === 'prompt' ? '2px solid var(--accent)' : 'none', paddingBottom: '4px', transition: 'opacity 0.2s' }}
+            >
+              Prompt AI
+            </span>
+            <span 
+              onClick={() => setEditorTab('examples')} 
+              style={{ cursor: 'pointer', opacity: editorTab === 'examples' ? 1 : 0.5, borderBottom: editorTab === 'examples' ? '2px solid var(--accent)' : 'none', paddingBottom: '4px', transition: 'opacity 0.2s' }}
+            >
+              Examples
+            </span>
           </div>
+          <div className="pane" style={{ borderRight: "1px solid #334155", flex: 1, minHeight: 0 }}>
+          {editorTab === 'code' ? (
+            <div className="editor-wrapper">
+              <div className="gutter" ref={gutterRef} aria-hidden>
+                <pre>{lineNumbers}</pre>
+              </div>
+              <textarea
+                ref={editorRef}
+                className="editor"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onScroll={(e) => {
+                  const t = e.target as HTMLTextAreaElement;
+                  if (gutterRef.current)
+                    gutterRef.current.scrollTop = t.scrollTop;
+                }}
+                spellCheck={false}
+              />
+            </div>
+          ) : editorTab === 'prompt' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px', gap: '12px', boxSizing: 'border-box', overflow: 'hidden' }}>
+              <div 
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  background: "color-mix(in srgb, var(--panel-strong) 40%, transparent)",
+                  border: "1px solid var(--line)",
+                  borderRadius: "16px",
+                  padding: "16px",
+                  boxSizing: "border-box"
+                }}
+              >
+                <textarea
+                  value={promptText}
+                  onChange={(e) => setPromptText(e.target.value)}
+                  placeholder="Ask anything, @ to mention, / for actions"
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--text)",
+                    fontFamily: "inherit",
+                    fontSize: "15px",
+                    resize: "none",
+                    outline: "none",
+                    paddingBottom: "12px"
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ position: 'relative' }}>
+                      <button 
+                        onClick={() => { setShowTooltip(!showTooltip); setShowInfo(false); }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', padding: '4px 8px', borderRadius: '6px', transition: 'background 0.2s' }}
+                        onMouseOver={(e) => e.currentTarget.style.background = 'color-mix(in srgb, var(--text) 5%, transparent)'}
+                        onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        {docType === 'concise' ? 'Concise Docs' : 'Detailed Docs'}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showTooltip ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><polyline points="6 9 12 15 18 9"></polyline></svg>
+                      </button>
+                      {showTooltip && (
+                        <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '0', background: 'var(--panel-strong)', border: '1px solid var(--line)', borderRadius: '10px', overflow: 'hidden', zIndex: 10, display: 'flex', flexDirection: 'column', minWidth: '220px', boxShadow: '0 8px 30px rgba(0,0,0,0.5)', animation: 'slideUpFade 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                          <div 
+                            onClick={() => { setDocType('concise'); setShowTooltip(false); }}
+                            style={{ padding: '10px 14px', cursor: 'pointer', background: docType === 'concise' ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'transparent', color: docType === 'concise' ? 'var(--accent)' : 'var(--text)', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.2s' }}
+                            onMouseOver={(e) => { if(docType !== 'concise') e.currentTarget.style.background = 'color-mix(in srgb, var(--text) 5%, transparent)' }}
+                            onMouseOut={(e) => { if(docType !== 'concise') e.currentTarget.style.background = 'transparent' }}
+                          >
+                            Concise (Fast) {docType === 'concise' && '✓'}
+                          </div>
+                          <div 
+                            onClick={() => { setDocType('detailed'); setShowTooltip(false); }}
+                            style={{ padding: '10px 14px', cursor: 'pointer', background: docType === 'detailed' ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'transparent', color: docType === 'detailed' ? 'var(--accent)' : 'var(--text)', fontSize: '13px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.2s' }}
+                            onMouseOver={(e) => { if(docType !== 'detailed') e.currentTarget.style.background = 'color-mix(in srgb, var(--text) 5%, transparent)' }}
+                            onMouseOut={(e) => { if(docType !== 'detailed') e.currentTarget.style.background = 'transparent' }}
+                          >
+                            Detailed (For Complex Figures) {docType === 'detailed' && '✓'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        onClick={() => { setShowInfo(!showInfo); setShowTooltip(false); }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', transition: 'background 0.2s, color 0.2s' }}
+                        onMouseOver={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text) 5%, transparent)'; e.currentTarget.style.color = 'var(--text)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
+                        title="What is this?"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                      </button>
+                      {showInfo && (
+                        <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '0', background: 'var(--panel-strong)', border: '1px solid var(--line)', borderRadius: '10px', padding: '14px', zIndex: 10, minWidth: '280px', boxShadow: '0 8px 30px rgba(0,0,0,0.5)', animation: 'slideUpFade 0.2s cubic-bezier(0.16, 1, 0.3, 1)', fontSize: '13px', lineHeight: '1.5', color: 'var(--text)' }}>
+                          <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--text)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            What is this?
+                            <button onClick={() => setShowInfo(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 0 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                          </div>
+                          <div style={{ color: 'var(--muted)', marginBottom: '10px' }}>This setting controls how much context the AI is given about MechTeX.</div>
+                          <div style={{ marginBottom: '6px' }}><strong style={{ color: 'var(--accent)' }}>Concise:</strong> Gives the AI a minimal cheatsheet. Faster generation, cheaper, and works well for simple prompts.</div>
+                          <div><strong style={{ color: 'var(--accent)' }}>Detailed:</strong> Gives the AI the complete API documentation. Slower to generate, but necessary for complex figures and advanced routing logic.</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={generateCode}
+                    disabled={isGenerating || !promptText.trim()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '36px',
+                      height: '36px',
+                      background: isGenerating || !promptText.trim() ? 'color-mix(in srgb, var(--text) 10%, transparent)' : 'var(--text)',
+                      color: 'var(--canvas-bg)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      cursor: isGenerating || !promptText.trim() ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                    title="Send"
+                  >
+                    {isGenerating ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="19" x2="12" y2="5"></line>
+                        <polyline points="5 12 12 5 19 12"></polyline>
+                      </svg>
+                    )}
+                  </button>
+                  <style>{`
+                    @keyframes spin { 100% { transform: rotate(360deg); } }
+                  `}</style>
+                </div>
+              </div>
+              {generateError && (
+                <div style={{ color: '#ef4444', padding: '8px', border: '1px solid #ef4444', borderRadius: '8px', fontSize: '13px', background: 'color-mix(in srgb, #ef4444 10%, transparent)' }}>
+                  {generateError}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px', gap: '16px', boxSizing: 'border-box', overflowY: 'auto' }}>
+              <p style={{ margin: 0, color: 'var(--muted)' }}>Select an example to load it into the editor.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {EXAMPLES.map((ex, i) => (
+                  <div key={i} style={{ 
+                    background: "color-mix(in srgb, var(--panel-strong) 40%, transparent)",
+                    border: "1px solid var(--line)",
+                    borderRadius: "6px",
+                    padding: "12px",
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text)' }}>{ex.title}</h3>
+                    <pre style={{ margin: 0, fontSize: '12px', color: 'var(--muted)', maxHeight: '100px', overflow: 'hidden', whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                      {ex.code.substring(0, 150)}...
+                    </pre>
+                    <button
+                      onClick={() => {
+                        setCode(ex.code);
+                        setEditorTab('code');
+                      }}
+                      style={{
+                        padding: '8px',
+                        background: 'var(--accent)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        alignSelf: 'flex-start'
+                      }}
+                    >
+                      Load Example
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         </div>
         <div className="pane">
           <div className="pane-header preview-header">

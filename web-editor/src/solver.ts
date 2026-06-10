@@ -531,6 +531,7 @@ export class Solver {
                 startX = startP.x;
                 startY = startP.y;
                 let currentP = startP;
+                let currentForcedT_in: { x: number; y: number } | undefined = undefined;
                 pathSegments = [];
 
                 for (let i = 1; i < constraints.connects.length; i++) {
@@ -549,28 +550,13 @@ export class Solver {
                     const isVover = cnode.method === "vover";
                     const baseMethod = isVover ? "over" : cnode.method;
 
-                    // --- Compute T_in (entry tangent point) ---
-                    let T_in: { x: number; y: number };
-                    if (isVover) {
-                      const clampedX = Math.max(
-                        C.x - r,
-                        Math.min(C.x + r, currentP.x),
-                      );
-                      const ey =
-                        C.y +
-                        Math.sqrt(Math.max(0, r * r - (clampedX - C.x) ** 2));
-                      T_in = { x: clampedX, y: ey };
-                    } else {
-                      const t1_arr = this.getTangents(currentP, C, r);
-                      const picked = this.pickTangent(t1_arr, baseMethod);
-                      if (!picked) throw new Error("No tangent");
-                      T_in = picked;
-                    }
-                    pathSegments.push({ type: "line", x: T_in.x, y: T_in.y });
-
                     // --- Look ahead to find exit target ---
                     const nextNode = constraints.connects[i + 1];
-                    let nextTargetP: { x: number; y: number };
+                    let nextTargetP: { x: number; y: number } | undefined = undefined;
+                    let nextC: { x: number; y: number } | undefined = undefined;
+                    let nextR: number | undefined = undefined;
+                    let nextMethod: string | undefined = undefined;
+
                     if (nextNode.type === "anchor") {
                       nextTargetP = this.getAnchorPosition(
                         nextNode.id,
@@ -578,33 +564,62 @@ export class Solver {
                       );
                     } else if (nextNode.type === "routing") {
                       const nextPulley = this.resolved.get(nextNode.id)!;
-                      const nextR = nextPulley.properties.radius || 1;
-                      nextTargetP = {
-                        x: nextPulley.bounds!.x + nextR,
-                        y: nextPulley.bounds!.y + nextR,
+                      const rVal = nextPulley.properties.radius || 1;
+                      nextR = rVal;
+                      nextC = {
+                        x: nextPulley.bounds!.x + rVal,
+                        y: nextPulley.bounds!.y + rVal,
                       };
+                      nextMethod = nextNode.method === "vover" ? "over" : nextNode.method;
                     } else {
                       throw new Error("Invalid next node");
                     }
 
-                    // --- Compute T_out (exit tangent point) ---
+                    // --- Compute T_in and T_out ---
+                    let T_in: { x: number; y: number };
                     let T_out: { x: number; y: number };
+                    let nextForcedT_in: { x: number; y: number } | undefined = undefined;
+
                     if (isVover) {
-                      const clampedX = Math.max(
-                        C.x - r,
-                        Math.min(C.x + r, nextTargetP.x),
-                      );
-                      const ey =
-                        C.y +
-                        Math.sqrt(Math.max(0, r * r - (clampedX - C.x) ** 2));
-                      T_out = { x: clampedX, y: ey };
+                      const clampedX_in = Math.max(C.x - r, Math.min(C.x + r, currentP.x));
+                      const targetX = nextTargetP ? nextTargetP.x : nextC!.x;
+                      const clampedX_out = Math.max(C.x - r, Math.min(C.x + r, targetX));
+                      T_in = { x: clampedX_in, y: C.y + Math.sqrt(Math.max(0, r * r - (clampedX_in - C.x) ** 2)) };
+                      T_out = { x: clampedX_out, y: C.y + Math.sqrt(Math.max(0, r * r - (clampedX_out - C.x) ** 2)) };
                     } else {
-                      const t2_arr = this.getTangents(nextTargetP, C, r);
-                      const picked = this.pickTangent(t2_arr, baseMethod);
-                      if (!picked) throw new Error("No tangent");
-                      T_out = picked;
+                      let forcedT_out: { x: number; y: number } | undefined = undefined;
+                      if (nextNode.type === "routing") {
+                        const commonT = this.getCommonTangents(C, r, nextC!, nextR!);
+                        if (commonT.length === 0) throw new Error("No common tangents");
+                        const pickedPair = this.pickCommonTangent(commonT, baseMethod, nextMethod!);
+                        forcedT_out = pickedPair.p1;
+                        nextForcedT_in = pickedPair.p2;
+                      }
+
+                      if (currentForcedT_in && forcedT_out) {
+                        T_in = currentForcedT_in;
+                        T_out = forcedT_out;
+                      } else if (currentForcedT_in && !forcedT_out) {
+                        T_in = currentForcedT_in;
+                        const t2_arr = this.getTangents(nextTargetP!, C, r);
+                        if (t2_arr.length === 0) throw new Error("No tangent");
+                        T_out = this.pickBestPair([T_in], t2_arr, C, r, baseMethod).outP;
+                      } else if (!currentForcedT_in && forcedT_out) {
+                        T_out = forcedT_out;
+                        const t1_arr = this.getTangents(currentP, C, r);
+                        if (t1_arr.length === 0) throw new Error("No tangent");
+                        T_in = this.pickBestPair(t1_arr, [T_out], C, r, baseMethod).inP;
+                      } else {
+                        const t1_arr = this.getTangents(currentP, C, r);
+                        const t2_arr = this.getTangents(nextTargetP!, C, r);
+                        if (t1_arr.length === 0 || t2_arr.length === 0) throw new Error("No tangent");
+                        const best = this.pickBestPair(t1_arr, t2_arr, C, r, baseMethod);
+                        T_in = best.inP;
+                        T_out = best.outP;
+                      }
                     }
 
+                    pathSegments.push({ type: "line", x: T_in.x, y: T_in.y });
                     pathSegments.push({
                       type: "arc",
                       x: T_out.x,
@@ -616,7 +631,8 @@ export class Solver {
                       inP: T_in,
                       outP: T_out,
                     });
-                    currentP = T_out;
+                    currentP = nextForcedT_in || T_out;
+                    currentForcedT_in = nextForcedT_in;
                   }
                 }
               } catch (e) {
@@ -839,15 +855,141 @@ export class Solver {
     ];
   }
 
-  private pickTangent(tangents: { x: number; y: number }[], method: string) {
-    if (tangents.length === 0) return null;
-    if (tangents.length === 1) return tangents[0];
-    const [T1, T2] = tangents;
-    if (method === "over" || method === "top") return T1.y > T2.y ? T1 : T2;
-    if (method === "under" || method === "bottom") return T1.y < T2.y ? T1 : T2;
-    if (method === "right") return T1.x > T2.x ? T1 : T2;
-    if (method === "left") return T1.x < T2.x ? T1 : T2;
-    return T1;
+    private getCommonTangents(
+    C1: { x: number; y: number },
+    r1: number,
+    C2: { x: number; y: number },
+    r2: number,
+  ) {
+    const dx = C2.x - C1.x;
+    const dy = C2.y - C1.y;
+    const d = Math.hypot(dx, dy);
+    if (d <= Math.abs(r1 - r2)) return [];
+    
+    const phi = Math.atan2(dy, dx);
+    const tangents = [];
+
+    // Outer tangents
+    const betaOuter = Math.asin((r1 - r2) / d);
+    tangents.push({
+      p1: { x: C1.x + r1 * Math.cos(phi + Math.PI / 2 + betaOuter), y: C1.y + r1 * Math.sin(phi + Math.PI / 2 + betaOuter) },
+      p2: { x: C2.x + r2 * Math.cos(phi + Math.PI / 2 + betaOuter), y: C2.y + r2 * Math.sin(phi + Math.PI / 2 + betaOuter) },
+    });
+    tangents.push({
+      p1: { x: C1.x + r1 * Math.cos(phi - Math.PI / 2 - betaOuter), y: C1.y + r1 * Math.sin(phi - Math.PI / 2 - betaOuter) },
+      p2: { x: C2.x + r2 * Math.cos(phi - Math.PI / 2 - betaOuter), y: C2.y + r2 * Math.sin(phi - Math.PI / 2 - betaOuter) },
+    });
+
+    // Inner tangents
+    if (d > r1 + r2) {
+      const betaInner = Math.asin((r1 + r2) / d);
+      tangents.push({
+        p1: { x: C1.x + r1 * Math.cos(phi + Math.PI / 2 - betaInner), y: C1.y + r1 * Math.sin(phi + Math.PI / 2 - betaInner) },
+        p2: { x: C2.x + r2 * Math.cos(phi - Math.PI / 2 - betaInner), y: C2.y + r2 * Math.sin(phi - Math.PI / 2 - betaInner) },
+      });
+      tangents.push({
+        p1: { x: C1.x + r1 * Math.cos(phi - Math.PI / 2 + betaInner), y: C1.y + r1 * Math.sin(phi - Math.PI / 2 + betaInner) },
+        p2: { x: C2.x + r2 * Math.cos(phi + Math.PI / 2 + betaInner), y: C2.y + r2 * Math.sin(phi + Math.PI / 2 + betaInner) },
+      });
+    }
+
+    return tangents;
+  }
+
+  private pickCommonTangent(
+    tangents: { p1: { x: number; y: number }; p2: { x: number; y: number } }[],
+    method1: string,
+    method2: string,
+  ) {
+    const scorePoint = (p: { x: number; y: number }, method: string) => {
+      if (method === "over" || method === "top") return p.y;
+      if (method === "under" || method === "bottom") return -p.y;
+      if (method === "right") return p.x;
+      if (method === "left") return -p.x;
+      return 0;
+    };
+
+    let bestScore = -Infinity;
+    let bestTangent = tangents[0];
+
+    for (const t of tangents) {
+      const score = scorePoint(t.p1, method1) + scorePoint(t.p2, method2);
+      if (score > bestScore) {
+        bestScore = score;
+        bestTangent = t;
+      }
+    }
+
+    return bestTangent;
+  }
+
+  private getArcLength(
+    inP: { x: number; y: number },
+    outP: { x: number; y: number },
+    C: { x: number; y: number },
+    r: number,
+    method: string,
+  ) {
+    const startAngle = Math.atan2(inP.y - C.y, inP.x - C.x);
+    const endAngle = Math.atan2(outP.y - C.y, outP.x - C.x);
+    let cwDelta = endAngle - startAngle;
+    if (cwDelta > 0) cwDelta -= 2 * Math.PI;
+    let ccwDelta = endAngle - startAngle;
+    if (ccwDelta < 0) ccwDelta += 2 * Math.PI;
+
+    const sampleArc = (delta: number) => {
+      const points = [];
+      const steps = 8;
+      for (let i = 0; i <= steps; i++) {
+        const a = startAngle + delta * (i / steps);
+        points.push({ x: C.x + r * Math.cos(a), y: C.y + r * Math.sin(a) });
+      }
+      return points;
+    };
+
+    const cwPoints = sampleArc(cwDelta);
+    const ccwPoints = sampleArc(ccwDelta);
+
+    const score = (pts: { x: number; y: number }[]) => {
+      if (method === "over" || method === "top") return Math.max(...pts.map((p) => p.y));
+      if (method === "under" || method === "bottom") return -Math.min(...pts.map((p) => p.y));
+      if (method === "left") return -Math.min(...pts.map((p) => p.x));
+      if (method === "right") return Math.max(...pts.map((p) => p.x));
+      return 0;
+    };
+
+    const scoreCw = score(cwPoints);
+    const scoreCcw = score(ccwPoints);
+
+    let finalLen = 0;
+    if (scoreCw > scoreCcw) finalLen = Math.abs(cwDelta);
+    else if (scoreCcw > scoreCw) finalLen = Math.abs(ccwDelta);
+    else finalLen = Math.min(Math.abs(cwDelta), Math.abs(ccwDelta));
+
+    if (finalLen < 1e-4) return 2 * Math.PI;
+    return finalLen;
+  }
+
+  private pickBestPair(
+    inCandidates: { x: number; y: number }[],
+    outCandidates: { x: number; y: number }[],
+    C: { x: number; y: number },
+    r: number,
+    method: string,
+  ) {
+    let bestLen = Infinity;
+    let bestPair = { inP: inCandidates[0], outP: outCandidates[0] };
+
+    for (const inP of inCandidates) {
+      for (const outP of outCandidates) {
+        const len = this.getArcLength(inP, outP, C, r, method);
+        if (len < bestLen) {
+          bestLen = len;
+          bestPair = { inP, outP };
+        }
+      }
+    }
+    return bestPair;
   }
 
   private getGroupOffset(groupId?: string): { x: number; y: number } {
