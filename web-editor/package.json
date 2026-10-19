@@ -1,8 +1,31 @@
 {
   "name": "web-editor",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Interactive web editor and instant SVG renderer for MechTeX, a LaTeX-like language for mechanical physics diagrams.",
   "type": "module",
+  "keywords": [
+    "mechtex",
+    "web-editor",
+    "latex",
+    "physics",
+    "mechanics",
+    "diagram-generator",
+    "react",
+    "katex",
+    "svg-renderer",
+    "nearley"
+  ],
+  "author": "Aayush Shah (https://github.com/shahaayush265)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shahaayush265/mechtex.git"
+  },
+  "homepage": "https://shahaayush265.github.io/mechtex-live/",
+  "bugs": {
+    "url": "https://github.com/shahaayush265/mechtex/issues"
+  },
   "scripts": {
     "dev": "npm run build:grammar && vite",
     "build": "npm run build:grammar && tsc -b && vite build",

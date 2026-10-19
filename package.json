@@ -1,0 +1,27 @@
+{
+  "name": "mechtex",
+  "version": "1.0.0",
+  "description": "MechTeX is a small LaTeX-like domain-specific language and React web editor for describing and rendering mechanical physics diagrams (blocks, inclines, pulleys, strings, forces).",
+  "keywords": [
+    "mechtex",
+    "latex",
+    "physics",
+    "mechanics",
+    "free-body-diagrams",
+    "physics-diagrams",
+    "diagram-generator",
+    "stem-education",
+    "react",
+    "svg"
+  ],
+  "author": "Aayush Shah (https://github.com/shahaayush265)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shahaayush265/mechtex.git"
+  },
+  "homepage": "https://shahaayush265.github.io/mechtex-live/",
+  "bugs": {
+    "url": "https://github.com/shahaayush265/mechtex/issues"
+  }
+}
